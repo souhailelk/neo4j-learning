@@ -2,17 +2,25 @@ import com.vividsolutions.jts.geom.Coordinate;
 import com.vividsolutions.jts.geom.CoordinateList;
 import org.neo4j.gis.spatial.SimplePointLayer;
 import org.neo4j.gis.spatial.SpatialDatabaseService;
+import org.neo4j.gis.spatial.osm.OSMImporter;
 import org.neo4j.gis.spatial.pipes.GeoPipeFlow;
 import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.Transaction;
 import org.neo4j.graphdb.factory.GraphDatabaseFactory;
+import org.neo4j.graphdb.factory.GraphDatabaseSettings;
+import org.neo4j.unsafe.batchinsert.BatchInserter;
+import org.neo4j.unsafe.batchinsert.BatchInserters;
 
+import javax.xml.stream.XMLStreamException;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class Main {
     private static final Coordinate testOrigin = new Coordinate(13.0, 55.6);
@@ -65,10 +73,36 @@ public class Main {
         tmpDir.deleteOnExit();
     }
 
+    static final Map<String, String> LARGE_CONFIG = new HashMap<>();
+
+    static {
+        LARGE_CONFIG.put(GraphDatabaseSettings.pagecache_memory.name(), "100M");
+        LARGE_CONFIG.put(GraphDatabaseSettings.batch_inserter_batch_size.name(), "2");
+        LARGE_CONFIG.put(GraphDatabaseSettings.dump_configuration.name(), "true");
+    }
+
+    private static void LoadOsmToNeo4j(File dbDir) throws IOException, XMLStreamException {
+        File tmpDir = dbDir == null ? Files.createTempDirectory(null).toFile() : dbDir;
+        String dataset = "src/main/resources/copenhaggen.osm";
+        OSMImporter importer = new OSMImporter(dataset);
+        importer.setCharset(StandardCharsets.UTF_8);
+
+        GraphDatabaseService graph = new GraphDatabaseFactory().newEmbeddedDatabase(tmpDir);
+        graph.shutdown();
+        BatchInserter batchInserter = BatchInserters.inserter(tmpDir, LARGE_CONFIG);
+        importer.importFile(batchInserter, dataset, false);
+        batchInserter.shutdown();
+        graph = new GraphDatabaseFactory().newEmbeddedDatabase(tmpDir);
+        importer.reIndex(graph);
+        graph.shutdown();
+        tmpDir.deleteOnExit();
+    }
+
     public static void main(String[] argv) {
         try {
             FindingThingsCloseToOtherThings();
-        } catch (IOException e) {
+            LoadOsmToNeo4j(new File("C:\\Users\\elkai\\Desktop\\xx"));
+        } catch (IOException | XMLStreamException e) {
             e.printStackTrace();
         }
     }
