@@ -1,8 +1,8 @@
 import com.vividsolutions.jts.geom.Coordinate;
 import com.vividsolutions.jts.geom.CoordinateList;
-import org.neo4j.gis.spatial.SimplePointLayer;
-import org.neo4j.gis.spatial.SpatialDatabaseService;
+import org.neo4j.gis.spatial.*;
 import org.neo4j.gis.spatial.osm.OSMImporter;
+import org.neo4j.gis.spatial.osm.OSMLayer;
 import org.neo4j.gis.spatial.pipes.GeoPipeFlow;
 import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.Transaction;
@@ -98,11 +98,28 @@ public class Main {
         tmpDir.deleteOnExit();
     }
 
+    private static void ExportShapeFile(File dbDir) throws Exception {
+        File tmpDir = dbDir == null ? Files.createTempDirectory(null).toFile() : dbDir;
+        GraphDatabaseService graph = new GraphDatabaseFactory().newEmbeddedDatabase(tmpDir);
+        SpatialDatabaseService spatialService = new SpatialDatabaseService(graph);
+        try (Transaction tx = graph.beginTx()) {
+            OSMLayer layer = (OSMLayer) spatialService.getLayer("src/main/resources/copenhaggen.osm");
+            DynamicLayerConfig wayLayer = layer.addSimpleDynamicLayer(Constants.GTYPE_POINT);
+            ShapefileExporter shpExporter = new ShapefileExporter(graph);
+            shpExporter.exportLayer(wayLayer.getName());
+            tx.success();
+        }
+    }
+
     public static void main(String[] argv) {
         try {
-            FindingThingsCloseToOtherThings(null);
-            LoadOsmToNeo4j(new File("C:\\Users\\elkai\\Desktop\\xx"));
+            File dbDir = new File("C:\\Users\\elkai\\Desktop\\xx");
+            //FindingThingsCloseToOtherThings(dbDir);
+            //LoadOsmToNeo4j(dbDir);
+            ExportShapeFile(dbDir);
         } catch (IOException | XMLStreamException e) {
+            e.printStackTrace();
+        } catch (Exception e) {
             e.printStackTrace();
         }
     }
