@@ -28,7 +28,7 @@ public class Main {
     private static Coordinate[] makeCoordinateDataFromTextFile() throws IOException {
         CoordinateList data = new CoordinateList();
         try {
-            BufferedReader reader = new BufferedReader(new FileReader("src/main/resources/" + "NEO4J-SPATIAL.txt"));
+            BufferedReader reader = new BufferedReader(new FileReader("src/main/resources/NEO4J-SPATIAL.txt"));
             String line;
             int row = 0;
             while ((line = reader.readLine()) != null) {
@@ -48,12 +48,12 @@ public class Main {
         return data.toCoordinateArray();
     }
 
-    private static void FindingThingsCloseToOtherThings() throws IOException {
+    private static void FindingThingsCloseToOtherThings(File dbDir) throws IOException {
         // Initialize database
-        File tmpDir = Files.createTempDirectory(null).toFile();
+        File tmpDir = dbDir == null ? Files.createTempDirectory(null).toFile() : dbDir;
         GraphDatabaseService graph = new GraphDatabaseFactory().newEmbeddedDatabase(tmpDir);
 
-        try(Transaction tx = graph.beginTx()) {
+        try (Transaction tx = graph.beginTx()) {
             SpatialDatabaseService db = new SpatialDatabaseService(graph);
             SimplePointLayer layer = db.createSimplePointLayer("neo-text");
             for (Coordinate coordinate :
@@ -100,7 +100,7 @@ public class Main {
 
     public static void main(String[] argv) {
         try {
-            FindingThingsCloseToOtherThings();
+            FindingThingsCloseToOtherThings(null);
             LoadOsmToNeo4j(new File("C:\\Users\\elkai\\Desktop\\xx"));
         } catch (IOException | XMLStreamException e) {
             e.printStackTrace();
