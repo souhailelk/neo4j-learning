@@ -19,11 +19,13 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
 public class Main {
-    private static final Coordinate testOrigin = new Coordinate(13.0, 55.6);
+    private static final Coordinate TEST_ORIGIN = new Coordinate(13.0, 55.6);
+    public static final String DATASET_PATH = "src/main/resources/copenhaggen.osm";
 
     private static Coordinate[] makeCoordinateDataFromTextFile() throws IOException {
         CoordinateList data = new CoordinateList();
@@ -35,7 +37,7 @@ public class Main {
                 int col = 0;
                 for (String character : line.split("")) {
                     if (col > 0 && !character.matches("\\s")) {
-                        Coordinate coordinate = new Coordinate(Main.testOrigin.x + (double) col / 100.0, Main.testOrigin.y - (double) row / 100.0);
+                        Coordinate coordinate = new Coordinate(Main.TEST_ORIGIN.x + (double) col / 100.0, Main.TEST_ORIGIN.y - (double) row / 100.0);
                         data.add(coordinate);
                     }
                     col++;
@@ -48,25 +50,33 @@ public class Main {
         return data.toCoordinateArray();
     }
 
-    private static void FindingThingsCloseToOtherThings(File dbDir) throws IOException {
+    private static void FindingThingsCloseToOtherThings(File dbDir) throws Exception {
         // Initialize database
         File tmpDir = dbDir == null ? Files.createTempDirectory(null).toFile() : dbDir;
         GraphDatabaseService graph = new GraphDatabaseFactory().newEmbeddedDatabase(tmpDir);
-
+        SpatialDatabaseService spatialService = new SpatialDatabaseService(graph);
         try (Transaction tx = graph.beginTx()) {
             SpatialDatabaseService db = new SpatialDatabaseService(graph);
             SimplePointLayer layer = db.createSimplePointLayer("neo-text");
-            for (Coordinate coordinate :
-                    makeCoordinateDataFromTextFile()) {
+            Coordinate[] coordinates = makeCoordinateDataFromTextFile();
+            for (Coordinate coordinate : coordinates)
                 layer.add(coordinate);
-            }
             // Search for nearby locations
             Coordinate myPosition = new Coordinate(13.76, 55.56);
-            List<GeoPipeFlow> results =
-                    layer.findClosestPointsTo(myPosition, 10.0);
+            List<GeoPipeFlow> results = layer.findClosestPointsTo(myPosition, 10.0);
+            System.out.println(coordinates.length);
             System.out.println(results.size());
             Coordinate closest = results.get(0).getGeometry().getCoordinate();
             System.out.println(closest.x + " " + closest.y + " " + closest.z);
+            ShapefileExporter shpExporter = new ShapefileExporter(graph);
+            shpExporter.exportLayer(layer.getName());
+            SimplePointLayer nearestPointsLayer = db.createSimplePointLayer("nearestPointsLayer");
+            for (Iterator<GeoPipeFlow> it = results.iterator(); it.hasNext(); ) {
+                GeoPipeFlow point = it.next();
+                nearestPointsLayer.add(point.getGeometry().getCoordinate());
+
+            }
+            shpExporter.exportLayer(nearestPointsLayer.getName());
             tx.success();
         }
         graph.shutdown();
@@ -83,14 +93,13 @@ public class Main {
 
     private static void LoadOsmToNeo4j(File dbDir) throws IOException, XMLStreamException {
         File tmpDir = dbDir == null ? Files.createTempDirectory(null).toFile() : dbDir;
-        String dataset = "src/main/resources/copenhaggen.osm";
-        OSMImporter importer = new OSMImporter(dataset);
+        OSMImporter importer = new OSMImporter(DATASET_PATH);
         importer.setCharset(StandardCharsets.UTF_8);
 
         GraphDatabaseService graph = new GraphDatabaseFactory().newEmbeddedDatabase(tmpDir);
         graph.shutdown();
         BatchInserter batchInserter = BatchInserters.inserter(tmpDir, LARGE_CONFIG);
-        importer.importFile(batchInserter, dataset, false);
+        importer.importFile(batchInserter, DATASET_PATH, false);
         batchInserter.shutdown();
         graph = new GraphDatabaseFactory().newEmbeddedDatabase(tmpDir);
         importer.reIndex(graph);
@@ -100,10 +109,11 @@ public class Main {
 
     private static void ExportShapeFile(File dbDir) throws Exception {
         File tmpDir = dbDir == null ? Files.createTempDirectory(null).toFile() : dbDir;
+        LoadOsmToNeo4j(tmpDir);
         GraphDatabaseService graph = new GraphDatabaseFactory().newEmbeddedDatabase(tmpDir);
         SpatialDatabaseService spatialService = new SpatialDatabaseService(graph);
         try (Transaction tx = graph.beginTx()) {
-            OSMLayer layer = (OSMLayer) spatialService.getLayer("src/main/resources/copenhaggen.osm");
+            OSMLayer layer = (OSMLayer) spatialService.getLayer(DATASET_PATH);
             DynamicLayerConfig wayLayer = layer.addSimpleDynamicLayer(Constants.GTYPE_POINT);
             ShapefileExporter shpExporter = new ShapefileExporter(graph);
             shpExporter.exportLayer(wayLayer.getName());
@@ -114,11 +124,9 @@ public class Main {
     public static void main(String[] argv) {
         try {
             File dbDir = new File("C:\\Users\\elkai\\Desktop\\xx");
-            //FindingThingsCloseToOtherThings(dbDir);
-            //LoadOsmToNeo4j(dbDir);
-            ExportShapeFile(dbDir);
-        } catch (IOException | XMLStreamException e) {
-            e.printStackTrace();
+            FindingThingsCloseToOtherThings(null);
+            LoadOsmToNeo4j(null);
+            ExportShapeFile(null);
         } catch (Exception e) {
             e.printStackTrace();
         }
